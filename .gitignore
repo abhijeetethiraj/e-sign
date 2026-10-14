@@ -1,0 +1,51 @@
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.iml
+.agents/
+
+# Environment files (Never commit secrets)
+.env
+.env*.local
+backend/.env
+backend/.env*.local
+!.env.example
+!backend/.env.example
+
+# Node.js Backend dependencies
+backend/node_modules/
+backend/npm-debug.log*
+
+
+# Flutter & Dart
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.pub-cache/
+frontend/.pub/
+frontend/build/
+frontend/coverage/
+
+# Android build artifacts & local properties
+frontend/android/.gradle/
+frontend/android/local.properties
+frontend/android/app/debug/
+frontend/android/app/profile/
+frontend/android/app/release/
+
+# iOS build artifacts
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+frontend/ios/Flutter/Flutter.framework
+frontend/ios/Flutter/Flutter.podspec
+frontend/ios/Flutter/Generated.xcconfig
+frontend/ios/Flutter/app.flx
+frontend/ios/Flutter/app.zip
+frontend/ios/Flutter/flutter_assets/
+
+# General logs
+*.log

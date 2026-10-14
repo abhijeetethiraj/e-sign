@@ -1,0 +1,57 @@
+services:
+  # 1. MySQL Relational Database (Audit Trail Ledger & Verification Store)
+  db:
+    image: mysql:8.0
+    container_name: esign-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${DB_NAME:-esign_db}
+      MYSQL_USER: ${DB_USER:-esign_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-esign_pass123}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - esign-network
+
+  # 2. Node.js Express REST API (Audit Recording, Automated Email & Hash Verification)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: esign-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      PORT: 8000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-esign_db}
+      DB_USER: ${DB_USER:-esign_user}
+      DB_PASSWORD: ${DB_PASSWORD:-esign_pass123}
+      SMTP_USER: ${SMTP_USER:-abhijeet.ethiraj@futurescapetech.com}
+      SMTP_PASS: ${SMTP_PASS:-hcpa zpymtnclkbds}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - esign-network
+
+# Persistent storage for MySQL data so tables & records persist across reboots/deployments
+volumes:
+  mysql_data:
+    driver: local
+
+# Isolated internal bridge network allowing backend to communicate with database securely
+networks:
+  esign-network:
+    driver: bridge
