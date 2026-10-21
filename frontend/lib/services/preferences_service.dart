@@ -32,14 +32,18 @@ class PreferencesService {
   /// Restores the persisted UserSession if previously logged in
   static Future<UserSession?> getSession() async {
     final prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString(_keyToken);
     final String? userId = prefs.getString(_keyUserId);
     final String? email = prefs.getString(_keyUserEmail);
     final String? authTimeStr = prefs.getString(_keyAuthTime);
     final String? authMethod = prefs.getString(_keyAuthMethod);
 
-    if (userId == null || email == null) {
+    // Token and userId are required to consider a session active
+    if (token == null || token.isEmpty || userId == null || userId.isEmpty) {
       return null;
     }
+
+    final String resolvedEmail = (email != null && email.isNotEmpty) ? email : userId;
 
     final DateTime authTime = authTimeStr != null
         ? (DateTime.tryParse(authTimeStr) ?? DateTime.now().toUtc())
@@ -47,13 +51,13 @@ class PreferencesService {
 
     return UserSession(
       userId: userId,
-      email: email,
+      email: resolvedEmail,
       authenticatedAt: authTime,
-      authMethod: authMethod ?? 'Keycloak SSO (Google OAuth2 + PKCE)',
+      authMethod: authMethod ?? 'OneSSO Mobile Auth',
     );
   }
 
-  /// Clears stored credentials on logout
+  /// Clears stored credentials and session data on logout or account deletion
   static Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyToken);
@@ -61,5 +65,10 @@ class PreferencesService {
     await prefs.remove(_keyUserEmail);
     await prefs.remove(_keyAuthTime);
     await prefs.remove(_keyAuthMethod);
+    await prefs.remove('cubeone_active_user_id');
+    await prefs.remove('cubeone_active_email');
+    await prefs.remove('cubeone_active_otp_type');
+    await prefs.remove('cubeone_active_source');
+    await prefs.remove('cubeone_is_forgot_password');
   }
 }

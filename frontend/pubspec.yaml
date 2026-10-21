@@ -50,6 +50,7 @@ dependencies:
   local_auth: ^3.0.2
   archive: ^4.0.0
   xml: ^7.0.1
+  sms_autofill: ^2.4.1
 
 dev_dependencies:
   flutter_test:
@@ -73,7 +74,7 @@ flutter:
     - assets/images/
 
   # An image asset can refer to one or more resolution-specific "variants", see
-  # https://flutter.dev/to/resolution-aware-images
+  # https://flutter.dev/to/reso̦lution-aware-images
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package

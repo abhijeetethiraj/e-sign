@@ -284,4 +284,20 @@ class LocalDocumentService {
 
     await _writeManifestToPrefs(prefs, uniqueDocs);
   }
+
+  /// Deletes all locally saved documents, physical PDF files, and clears the manifest.
+  /// Used when an account is deleted to ensure zero lingering data.
+  static Future<void> clearAllDocuments() async {
+    try {
+      final signDir = await _getStorageDirectory();
+      if (await signDir.exists()) {
+        await signDir.delete(recursive: true);
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyManifest);
+      await prefs.remove(_keySeeded);
+    } catch (e) {
+      debugPrint('[LocalDocumentService] Error clearing all documents: $e');
+    }
+  }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:frontend/providers/auth_provider.dart';
+import 'package:frontend/services/preferences_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -70,6 +71,21 @@ void main() {
 
       expect(authProvider.isAuthenticated, isFalse);
       expect(authProvider.userSession, isNull);
+    });
+
+    test('5. [Token Persistence] Saves JWT token and verifies availability for ApiClient', () async {
+      final authProvider = AuthProvider();
+      await authProvider.init();
+
+      await authProvider.completeSsoSession(
+        sessionToken: 'eyJhGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.sample_payload.sig',
+        userId: 'usr_jwt_user_1',
+        email: 'jwt.user@cubeone.in',
+      );
+
+      final token = await PreferencesService.getToken();
+      expect(token, equals('eyJhGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.sample_payload.sig'));
+      expect(authProvider.isAuthenticated, isTrue);
     });
   });
 }

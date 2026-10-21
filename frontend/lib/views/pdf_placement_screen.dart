@@ -79,6 +79,9 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
     return best;
   }
 
+  final Map<int, Size> _pageSizes = {};
+  Size _viewportSize = Size.zero;
+
   @override
   void initState() {
     super.initState();
@@ -86,10 +89,14 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
       final doc = PdfDocument(inputBytes: widget.pdfBytes);
       _totalPages = doc.pages.count;
       _currentPage = _totalPages; // Start directly on the final signature page
+      for (int i = 0; i < doc.pages.count; i++) {
+        _pageSizes[i] = doc.pages[i].size;
+      }
       doc.dispose();
     } catch (_) {
       _totalPages = 1;
       _currentPage = 1;
+      _pageSizes[0] = const Size(595.28, 841.89);
     }
   }
 
@@ -99,19 +106,44 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
     super.dispose();
   }
 
+  /// Calculates the exact screen bounding rectangle of the rendered PDF page inside SfPdfViewer.
+  /// Eliminates the vertical letterbox top margin so stamped signatures match on-screen placement 1:1.
+  Rect _calculateRenderedPageBounds(int pageIndex, Size viewportSize) {
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+      return Rect.fromLTWH(0, 0, viewportSize.width, viewportSize.height);
+    }
+    final pdfPageSize = _pageSizes[pageIndex] ?? const Size(595.28, 841.89);
+    final double scaleW = viewportSize.width / pdfPageSize.width;
+
+    // Single-page mode in SfPdfViewer fits width on mobile portrait
+    if (pdfPageSize.height * scaleW <= viewportSize.height) {
+      final double renderedHeight = pdfPageSize.height * scaleW;
+      final double topOffset = (viewportSize.height - renderedHeight) / 2.0;
+      return Rect.fromLTWH(0.0, topOffset, viewportSize.width, renderedHeight);
+    } else {
+      final double scaleH = viewportSize.height / pdfPageSize.height;
+      final double renderedWidth = pdfPageSize.width * scaleH;
+      final double leftOffset = (viewportSize.width - renderedWidth) / 2.0;
+      return Rect.fromLTWH(leftOffset, 0.0, renderedWidth, viewportSize.height);
+    }
+  }
+
   /// Initializes the primary signature box at the bottom of the last page
   void _initFirstSignaturePlacement() {
     if (_initializedPosition || !mounted) return;
-    final size = MediaQuery.of(context).size;
-    final double initialX = (size.width - _signatureWidth - 28.0).clamp(16.0, size.width - _signatureWidth);
-    // Positioned near the bottom of the page where signature lines typically sit
-    final double initialY = (size.height - _signatureHeight - 170.0).clamp(60.0, size.height - _signatureHeight - 120.0);
+    final Size effectiveViewport = _viewportSize.width > 0 ? _viewportSize : MediaQuery.of(context).size;
+    final int targetPage = _totalPages - 1;
+    final bounds = _calculateRenderedPageBounds(targetPage, effectiveViewport);
+
+    final double initialX = (bounds.right - _signatureWidth - 20.0).clamp(bounds.left, bounds.right - _signatureWidth);
+    // Positioned neatly inside the white PDF page bottom
+    final double initialY = (bounds.bottom - _signatureHeight - 32.0).clamp(bounds.top, bounds.bottom - _signatureHeight);
 
     setState(() {
       _placements.add(
         SignaturePlacement(
           id: '1',
-          pageIndex: _totalPages - 1, // Place on final signature page
+          pageIndex: targetPage, // Place on final signature page
           x: initialX,
           y: initialY,
           isLocked: false,
@@ -126,12 +158,12 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
     if (_isStamping || details.pageNumber == -1) return;
 
     final int tappedPageIndex = details.pageNumber - 1;
-    final size = MediaQuery.of(context).size;
+    final Size effectiveViewport = _viewportSize.width > 0 ? _viewportSize : MediaQuery.of(context).size;
+    final bounds = _calculateRenderedPageBounds(tappedPageIndex, effectiveViewport);
 
-    // Center the signature box on the tap coordinate with bottom clearance for the navigation pill
-    final double bottomClearance = (_totalPages > 1 ? 84.0 : 30.0) + MediaQuery.of(context).padding.bottom;
-    final double targetX = (details.position.dx - (_signatureWidth / 2)).clamp(16.0, size.width - _signatureWidth - 16.0);
-    final double targetY = (details.position.dy - (_signatureHeight / 2)).clamp(60.0, size.height - _signatureHeight - bottomClearance);
+    // Center the signature box on the tap coordinate strictly clamped within the PDF page
+    final double targetX = (details.position.dx - (_signatureWidth / 2)).clamp(bounds.left, bounds.right - _signatureWidth);
+    final double targetY = (details.position.dy - (_signatureHeight / 2)).clamp(bounds.top, bounds.bottom - _signatureHeight);
 
     setState(() {
       // Find an active (unlocked) signature placement on this page
@@ -163,9 +195,10 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
 
   /// Adds a new signature box onto the visible page
   void _addSignaturePlacement() {
-    final size = MediaQuery.of(context).size;
-    final double nextX = (40.0 + (_placements.length * 20.0)).clamp(16.0, size.width - _signatureWidth - 16.0);
-    final double nextY = (size.height * 0.40 + ((_placements.length * 36.0) % 140.0)).clamp(60.0, size.height - _signatureHeight - 140.0);
+    final Size effectiveViewport = _viewportSize.width > 0 ? _viewportSize : MediaQuery.of(context).size;
+    final bounds = _calculateRenderedPageBounds(_currentPage - 1, effectiveViewport);
+    final double nextX = (bounds.left + 24.0 + (_placements.length * 16.0)).clamp(bounds.left, bounds.right - _signatureWidth);
+    final double nextY = (bounds.top + (bounds.height * 0.45) + ((_placements.length * 30.0) % 100.0)).clamp(bounds.top, bounds.bottom - _signatureHeight);
 
     setState(() {
       // Auto-lock all previously placed signatures so they remain pinned and never shift!
@@ -218,25 +251,27 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
       final PdfDocument doc = PdfDocument(inputBytes: widget.pdfBytes);
       final int totalDocPages = doc.pages.count;
       final double screenWidth = MediaQuery.of(context).size.width;
+      final Size effectiveViewport = _viewportSize.width > 0 ? _viewportSize : Size(screenWidth, MediaQuery.of(context).size.height);
 
       // 3. Compute PDF point locations for ALL placed signature boxes
+      // Subtracts the page bounds top offset so there is NO extra top margin!
       final List<SignatureLocation> locations = [];
       for (final p in _placements) {
         final int targetPageIndex = p.pageIndex.clamp(0, totalDocPages - 1);
         final Size pdfPageSize = doc.pages[targetPageIndex].size;
+        final bounds = _calculateRenderedPageBounds(targetPageIndex, effectiveViewport);
 
-        // Mathematical scaling from screen viewport to PDF points
-        final double scaleX = pdfPageSize.width / screenWidth;
-        final double renderedPageHeight = screenWidth * (pdfPageSize.height / pdfPageSize.width);
-        final double scaleY = pdfPageSize.height / renderedPageHeight;
+        final double scale = bounds.width / pdfPageSize.width;
+        final double localX = (p.x - bounds.left).clamp(0.0, bounds.width - _signatureWidth);
+        final double localY = (p.y - bounds.top).clamp(0.0, bounds.height - _signatureHeight);
 
         locations.add(
           SignatureLocation(
             pageIndex: targetPageIndex,
-            x: (p.x * scaleX).clamp(0.0, pdfPageSize.width - (_signatureWidth * scaleX)),
-            y: (p.y * scaleY).clamp(0.0, pdfPageSize.height - (_signatureHeight * scaleY)),
-            width: _signatureWidth * scaleX,
-            height: _signatureHeight * scaleY,
+            x: localX / scale,
+            y: localY / scale,
+            width: _signatureWidth / scale,
+            height: _signatureHeight / scale,
           ),
         );
       }
@@ -407,85 +442,87 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
           ),
         ],
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Layer 1: Single-Page Static PDF View (Wrapped in Positioned.fill for tight constraints!)
-          Positioned.fill(
-            child: SfPdfViewer.memory(
-              widget.pdfBytes,
-              key: const ValueKey('pdf_viewer_widget'),
-              controller: _pdfViewerController,
-              pageLayoutMode: PdfPageLayoutMode.single,
-              scrollDirection: PdfScrollDirection.horizontal,
-              initialPageNumber: _currentPage,
-              canShowScrollHead: false,
-              canShowScrollStatus: false,
-              canShowPaginationDialog: false,
-              enableDoubleTapZooming: false,
-              onDocumentLoaded: (PdfDocumentLoadedDetails details) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    _initFirstSignaturePlacement();
-                  }
-                });
-              },
-              onPageChanged: (PdfPageChangedDetails details) {
-                if (mounted) {
-                  setState(() {
-                    _currentPage = details.newPageNumber;
-                  });
-                }
-              },
-              onTap: _handleTapToPlace,
-            ),
-          ),
-
-          // Layer 2: Stationed, Draggable & Tap-Placed Signatures on Current Page
-          ...currentPagePlacements.map((p) {
-            final int globalIndex = _placements.indexOf(p);
-            final bool isLocked = p.isLocked;
-            final bool isAuthorized = (p == _authorizedFinalPlacement);
-
-            return Positioned(
-              left: p.x,
-              top: p.y,
-              child: Container(
-                width: _signatureWidth,
-                height: _signatureHeight,
-                decoration: BoxDecoration(
-                  border: Border.all(
-                    color: isLocked ? Colors.green.shade600 : AppTheme.primaryBlue,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(10),
-                  color: AppTheme.cardBg(context).withValues(alpha: isLocked ? 0.90 : 0.96),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          _viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              // Layer 1: Single-Page Static PDF View (Wrapped in Positioned.fill for tight constraints!)
+              Positioned.fill(
+                child: SfPdfViewer.memory(
+                  widget.pdfBytes,
+                  key: const ValueKey('pdf_viewer_widget'),
+                  controller: _pdfViewerController,
+                  pageLayoutMode: PdfPageLayoutMode.single,
+                  scrollDirection: PdfScrollDirection.horizontal,
+                  initialPageNumber: _currentPage,
+                  canShowScrollHead: false,
+                  canShowScrollStatus: false,
+                  canShowPaginationDialog: false,
+                  enableDoubleTapZooming: false,
+                  onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) {
+                        _initFirstSignaturePlacement();
+                      }
+                    });
+                  },
+                  onPageChanged: (PdfPageChangedDetails details) {
+                    if (mounted) {
+                      setState(() {
+                        _currentPage = details.newPageNumber;
+                      });
+                    }
+                  },
+                  onTap: _handleTapToPlace,
                 ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Draggable target: smooth 120 FPS drag because the page is stationary!
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: isLocked ? () => setState(() => p.isLocked = false) : null,
-                      onPanStart: isLocked ? null : (_) {},
-                      onPanUpdate: isLocked
-                          ? null
-                          : (DragUpdateDetails details) {
-                              setState(() {
-                                final size = MediaQuery.of(context).size;
-                                final double bottomClearance = (_totalPages > 1 ? 84.0 : 30.0) + MediaQuery.of(context).padding.bottom;
-                                p.x = (p.x + details.delta.dx).clamp(8.0, size.width - _signatureWidth - 8.0);
-                                p.y = (p.y + details.delta.dy).clamp(16.0, size.height - _signatureHeight - bottomClearance);
-                              });
-                            },
+              ),
+
+              // Layer 2: Stationed, Draggable & Tap-Placed Signatures on Current Page
+              ...currentPagePlacements.map((p) {
+                final int globalIndex = _placements.indexOf(p);
+                final bool isLocked = p.isLocked;
+                final bool isAuthorized = (p == _authorizedFinalPlacement);
+
+                return Positioned(
+                  left: p.x,
+                  top: p.y,
+                  child: Container(
+                    width: _signatureWidth,
+                    height: _signatureHeight,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: isLocked ? Colors.green.shade600 : AppTheme.primaryBlue,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      color: AppTheme.cardBg(context).withValues(alpha: isLocked ? 0.90 : 0.96),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.18),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        // Draggable target: smooth 120 FPS drag bounded cleanly to the PDF page!
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: isLocked ? () => setState(() => p.isLocked = false) : null,
+                          onPanStart: isLocked ? null : (_) {},
+                          onPanUpdate: isLocked
+                              ? null
+                              : (DragUpdateDetails details) {
+                                  final bounds = _calculateRenderedPageBounds(p.pageIndex, _viewportSize);
+                                  setState(() {
+                                    p.x = (p.x + details.delta.dx).clamp(bounds.left, bounds.right - _signatureWidth);
+                                    p.y = (p.y + details.delta.dy).clamp(bounds.top, bounds.bottom - _signatureHeight);
+                                  });
+                                },
                       child: Container(
                         padding: const EdgeInsets.fromLTRB(6, 16, 6, 6),
                         child: Center(
@@ -701,7 +738,9 @@ class _PdfPlacementScreenState extends State<PdfPlacementScreen> {
               child: const Center(child: CircularProgressIndicator()),
             ),
         ],
-      ),
-    );
+      );
+    },
+  ),
+);
   }
 }

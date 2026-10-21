@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../core/theme/app_theme.dart';
 import '../models/document_item.dart';
 import '../models/user_session.dart';
@@ -9,7 +10,6 @@ import '../services/audit_service.dart';
 import '../services/local_document_service.dart';
 import '../services/pdf_picker_service.dart';
 import '../widgets/document_card.dart';
-import 'login_screen.dart';
 import 'pdf_viewer_screen.dart';
 
 /// The main dashboard screen displaying saved, persistent documents.
@@ -322,6 +322,340 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
     return _documents;
   }
 
+  /// Launches phone dialer
+  Future<void> _launchPhone(String phone) async {
+    final Uri phoneUri = Uri(scheme: 'tel', path: phone.replaceAll(' ', ''));
+    try {
+      if (await canLaunchUrl(phoneUri)) {
+        await launchUrl(phoneUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
+
+  /// Drafts and opens an email deletion request to official CubeOne support
+  Future<void> _sendDeletionEmail({
+    required String userEmail,
+    required String userName,
+    required String userId,
+  }) async {
+    final Uri emailLaunchUri = Uri(
+      scheme: 'mailto',
+      path: 'support@cubeoneapp.com',
+      queryParameters: {
+        'subject': 'Account Deletion Request - $userEmail',
+        'body': 'Dear CubeOne Support Team,\n\n'
+            'I request the permanent deletion of my eSign account and all associated personal data from the database.\n\n'
+            'Account Information:\n'
+            '• Name: $userName\n'
+            '• Email / Mobile: $userEmail\n'
+            '• User ID: $userId\n\n'
+            'Please confirm once the account has been deleted.\n\n'
+            'Thank you,\n$userName',
+      },
+    );
+
+    try {
+      if (await canLaunchUrl(emailLaunchUri)) {
+        await launchUrl(emailLaunchUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✓ Deletion request drafted to support@cubeoneapp.com. Our support team will process it within 24-48 hours.'),
+          backgroundColor: Color(0xFF10B981),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  /// Shows the official Account Deletion & Support Modal (matches CubeOne support card)
+  void _showDeleteAccountSheet() {
+    final session = widget.userSession;
+    final userName = session?.displayName ?? 'Valued User';
+    final userEmail = session?.email ?? 'registered user';
+    final userId = session?.userId ?? '';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        final cardBg = isDark ? const Color(0xFF1E2024) : Colors.white;
+        final borderCol = isDark ? Colors.white12 : const Color(0xFFE2E8F0);
+        final textPrimary = isDark ? Colors.white : const Color(0xFF1E293B);
+        final textSecondary = isDark ? Colors.white70 : const Color(0xFF64748B);
+        const primaryRed = Color(0xFFE52535);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+          child: SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Drag handle
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Header with Danger Shield Icon
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: primaryRed.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.person_remove_outlined, color: primaryRed, size: 24),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Delete Account Request',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: textPrimary,
+                                letterSpacing: -0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Permanent removal of personal data',
+                              style: TextStyle(fontSize: 12, color: textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Legal & Support Info Notice
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white.withValues(alpha: 0.04) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: borderCol),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline, size: 18, color: primaryRed),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'To protect digital signatures and compliance audit records, account deletions are verified and processed directly by our support team within 24-48 hours.',
+                            style: TextStyle(fontSize: 12.5, color: textSecondary, height: 1.4),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+
+                  // VISIT OUR OFFICE CARD (Matches the user's exact screenshot!)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: cardBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: borderCol, width: 1.2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // VISIT OUR OFFICE title with red underline
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'VISIT OUR OFFICE',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: textSecondary,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              width: 60,
+                              height: 2.5,
+                              color: primaryRed,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Address Row
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.location_on_outlined, size: 20, color: textSecondary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                '1905, Cyber One, Plot-4, Sector-30A, Vashi, Navi Mumbai, Maharashtra 400703',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: textPrimary,
+                                  height: 1.35,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+
+                        // Phone Row (Clickable)
+                        InkWell(
+                          onTap: () => _launchPhone('02245740221'),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.headset_mic_outlined, size: 20, color: textSecondary),
+                                const SizedBox(width: 12),
+                                Text(
+                                  '022 45740221',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Email Row (Clickable in Red, matching screenshot!)
+                        InkWell(
+                          onTap: () => _sendDeletionEmail(userEmail: userEmail, userName: userName, userId: userId),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.mail_outline, size: 20, color: textSecondary),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'support@cubeoneapp.com',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: primaryRed,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+
+                  // Action Button 1: Send Deletion Email (Primary Action)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(ctx).pop();
+                        _sendDeletionEmail(userEmail: userEmail, userName: userName, userId: userId);
+                      },
+                      icon: const Icon(Icons.send_rounded, size: 18),
+                      label: const Text(
+                        'Send Deletion Request Email',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primaryRed,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Action Button 2: Wipe Local Data & Logout (Secondary Action)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.of(ctx).pop();
+                        final authProvider = context.read<AuthProvider>();
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).popUntil((route) => route.isFirst);
+                        }
+                        await authProvider.deleteAccount();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Local documents and credentials wiped from device.'),
+                              backgroundColor: Colors.black87,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.cleaning_services_outlined, size: 17),
+                      label: const Text(
+                        'Logout & Clear Device Data',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: primaryRed,
+                        side: BorderSide(color: primaryRed.withValues(alpha: 0.5)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final int signedCount = _documents.where((d) => d.status == DocumentStatus.signed).length;
@@ -400,13 +734,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 context.read<ThemeProvider>().toggleTheme();
               } else if (value == 'logout') {
                 final authProvider = context.read<AuthProvider>();
-                await authProvider.logout();
-                if (context.mounted) {
-                  Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    (route) => false,
-                  );
+                // Pop any open menus/dialogs back to root
+                if (Navigator.of(context).canPop()) {
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 }
+                await authProvider.logout();
+              } else if (value == 'delete_account') {
+                _showDeleteAccountSheet();
               }
             },
             itemBuilder: (context) => [
@@ -419,10 +753,13 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                       widget.userSession?.displayName ?? 'Authenticated User',
                       style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textPrimary(context)),
                     ),
-                    Text(
-                      widget.userSession?.email ?? '',
-                      style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context)),
-                    ),
+                    if (widget.userSession?.email != null &&
+                        widget.userSession!.email.isNotEmpty &&
+                        widget.userSession!.email != widget.userSession!.displayName)
+                      Text(
+                        widget.userSession!.email,
+                        style: TextStyle(fontSize: 12, color: AppTheme.textSecondary(context)),
+                      ),
                   ],
                 ),
               ),
@@ -454,9 +791,19 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
                 value: 'logout',
                 child: Row(
                   children: [
-                    Icon(Icons.logout, size: 18, color: Colors.red),
+                    Icon(Icons.logout, size: 18, color: Colors.orange),
                     SizedBox(width: 8),
-                    Text('Logout', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                    Text('Logout', style: TextStyle(color: Colors.orange, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'delete_account',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_forever, size: 18, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Delete Account', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),

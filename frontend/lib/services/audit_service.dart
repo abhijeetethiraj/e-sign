@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import '../core/network/api_client.dart';
 import '../core/network/api_endpoints.dart';
 import '../models/signing_event.dart';
 
@@ -47,14 +48,9 @@ class AuditService {
     Uint8List? signedPdfBytes,
   }) async {
     try {
-      final dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 8),
-          receiveTimeout: const Duration(seconds: 8),
-        ),
-      );
-      final url = '${ApiEndpoints.baseUrl}${ApiEndpoints.signingEvents}';
-      debugPrint('[Audit] Posting signing event to $url');
+      final dio = ApiClient().dio;
+      final url = ApiEndpoints.signingEvents;
+      debugPrint('[Audit] Posting signing event to $url with Bearer token injection');
       final response = await dio.post(
         url,
         data: {
@@ -84,13 +80,8 @@ class AuditService {
       verifyDocument(Uint8List documentBytes) async {
     final String hash = computeDocumentHash(documentBytes);
     try {
-      final dio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 4),
-          receiveTimeout: const Duration(seconds: 4),
-        ),
-      );
-      final url = '${ApiEndpoints.baseUrl}${ApiEndpoints.signingEvents}/verify/$hash';
+      final dio = ApiClient().dio;
+      final url = '${ApiEndpoints.signingEvents}/verify/$hash';
       debugPrint('[Audit] Verifying document at $url');
       final response = await dio.get(url);
       if (response.statusCode == 200 && response.data is Map) {
